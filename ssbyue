@@ -1,0 +1,414 @@
+// ==UserScript==
+// @name         叔叔不约自动配对助手
+// @namespace    wwbnq
+// @version      2.3
+// @description  自动配对女生并问候，优化离开按钮检测，解决流程冲突
+// @author       WWBNQ
+// @match        *://*.shushubuyue.net/*
+// @match        *://*.shushubuyue.com/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=shushubuyue.net
+// @license      MIT
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const CONFIG = {
+        CHECK_INTERVAL: 800,      // 主循环检查间隔
+        MIN_DELAY: 500,          // 最小延迟时间
+        MAX_DELAY: 1500,         // 最大延迟时间
+        LEAVE_MIN_DELAY: 800,    // 离开最小延迟
+        LEAVE_MAX_DELAY: 2000,   // 离开最大延迟
+        CHAT_MIN_DELAY: 500,     // 聊天最小延迟
+        CHAT_MAX_DELAY: 1500     // 聊天最大延迟
+    };
+
+    const GREETINGS = [
+        "你好呀~",
+        "你好鸭！",
+        "嗨，在吗？",
+        "hello~",
+        "哈喽，很高兴遇见你~",
+        "嗨！今天天气不错呢",
+        "hi，打个招呼~",
+        "你好啊，聊聊天吗？",
+        "嗨，可以认识一下吗？",
+        "你好，今天心情如何？",
+        "hey，打扰啦~",
+        "在忙吗？聊会天？",
+        "hi，打扰一下~",
+        "你好，可以聊聊吗？",
+        "嗨，今天过得怎么样？"
+    ];
+
+    let isLocked = false;
+    let isScriptEnabled = true;
+    let matchCount = parseInt(localStorage.getItem('matchCount') || '0');
+    let startTime = Date.now();
+    let isInLeaveProcess = false;
+
+    function getRandomDelay(min, max) {
+        return Math.floor(Math.random() * (max - min + 1) + min);
+    }
+
+    function getRandomGreeting() {
+        return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+    }
+
+    // 查找离开按钮
+    function findLeaveButton() {
+        const selectors = [
+            "a.button-link.leave",
+            "a.button-link.chat-control",
+            "a.leave",
+            ".chat-control",
+            "span.chat-control",
+            "a[class*='leave']",
+            "a[class*='chat-control']"
+        ];
+
+        for (const selector of selectors) {
+            const button = document.querySelector(selector);
+            if (button) {
+                console.log(`找到离开按钮: ${selector}`);
+                return button;
+            }
+        }
+        
+        console.log("未找到任何离开按钮");
+        return null;
+    }
+
+    function hasNewSystemMessage() {
+        try {
+            // 获取页面所有文本内容
+            const pageText = document.body.innerText;
+            
+            // 检查是否包含"对方离开"相关文本
+            if (pageText.includes("对方离开了") || pageText.includes("对方已离开") || pageText.includes("对方离开")) {
+                console.log("检测到对方离开信息");
+                return true;
+            }
+            
+            return false;
+        } catch (error) {
+            console.error("检查系统消息出错:", error);
+            return false;
+        }
+    }
+
+    // 检查是否有离开确认弹窗
+    function hasLeaveModal() {
+        return !!document.querySelector(".actions-modal");
+    }
+
+    // 处理离开确认弹窗
+    async function handleLeaveModal() {
+        const confirmButton = document.querySelector(".actions-modal-button-bold.color-danger");
+        if (confirmButton) {
+            console.log("点击离开确认按钮");
+            confirmButton.click();
+            await new Promise(r => setTimeout(r, CONFIG.LEAVE_MAX_DELAY));
+        }
+    }
+
+    function createStatsDisplay() {
+        const statsDiv = document.createElement('div');
+        statsDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: linear-gradient(145deg, rgba(0,0,0,0.8), rgba(40,40,40,.9));
+            color: #fff;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 14px;
+            z-index: 9999;
+            font-family: 'Arial', sans-serif;
+            box-shadow: 0 4px 15px rgba(0,0,0,.2);
+            border: 1px solid rgba(255,255,255,0.1);
+            min-width: 150px;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            user-select: none;
+        `;
+
+        const toggleButton = document.createElement('button');
+        toggleButton.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: ${isScriptEnabled ? '#00ff00' : '#ff6b6b'};
+            border: none;
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+
+        toggleButton.addEventListener('click', () => {
+            isScriptEnabled = !isScriptEnabled;
+            toggleButton.style.background = isScriptEnabled ? '#00ff00' : '#ff6b6b';
+            console.log(`脚本已${isScriptEnabled ? '启用' : '暂停'}`);
+        });
+
+        statsDiv.appendChild(toggleButton);
+        document.body.appendChild(statsDiv);
+        return statsDiv;
+    }
+
+    function updateStatsDisplay(statsDiv) {
+        const runTime = Math.floor((Date.now() - startTime) / 60000);
+        const hours = Math.floor(runTime / 60);
+        const minutes = runTime % 60;
+        const timeStr = hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`;
+
+        statsDiv.innerHTML = `
+            <div style="text-align: center; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">
+                自动配对统计
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="color: #ff6b6b;">♥</span> 匹配次数: ${matchCount}
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="color: ${isLocked ? '#00ff00' : '#ff9900'};">●</span>
+                状态: ${isLocked ? '聊天中' : '搜索中'}
+            </div>
+            <div style="font-size: 12px; color: #aaa;">
+                运行时间: ${timeStr}
+            </div>
+        `;
+    }
+
+    // 被动离开流程（对方已离开时）：离开-重新开始
+    async function handlePartnerLeft() {
+        if (isInLeaveProcess) {
+            console.log("已在离开流程中，跳过被动离开");
+            return;
+        }
+        
+        console.log("执行被动离开流程");
+        isLocked = false;
+        isInLeaveProcess = true;
+        
+        try {
+            // 1. 如果有弹窗，先处理弹窗
+            if (hasLeaveModal()) {
+                await handleLeaveModal();
+                await startNewChat();
+                return;
+            }
+
+            // 2. 查找并点击离开按钮
+            const leaveButton = findLeaveButton();
+            if (leaveButton) {
+                console.log("点击离开按钮");
+                leaveButton.click();
+                await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+            } else {
+                console.log("未找到离开按钮，尝试直接重新开始");
+            }
+            
+            // 3. 直接点击重新开始
+            await startNewChat();
+            
+        } catch (error) {
+            console.error("被动离开处理出错:", error);
+        } finally {
+            isLocked = false;
+            isInLeaveProcess = false;
+        }
+    }
+
+    // 主动离开流程（匹配到男生且未离开时）：离开-离开-重新开始
+    async function handleMaleMatch() {
+        if (isInLeaveProcess) {
+            console.log("已在离开流程中，跳过主动离开");
+            return;
+        }
+
+        try {
+            isInLeaveProcess = true;
+
+            // 如果已经有弹窗，直接处理
+            if (hasLeaveModal()) {
+                console.log("检测到离开弹窗，直接处理");
+                await handleLeaveModal();
+                await startNewChat();
+                return;
+            }
+
+            console.log("执行主动离开流程");
+            
+            // 1. 查找并点击离开按钮
+            const leaveButton = findLeaveButton();
+            if (leaveButton) {
+                console.log("点击离开按钮");
+                leaveButton.click();
+                await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+            }
+            
+            // 2. 确认离开
+            await handleLeaveModal();
+            
+            // 3. 重新开始
+            await startNewChat();
+            
+        } catch (error) {
+            console.error("主动离开操作出错:", error);
+        } finally {
+            isLocked = false;
+            isInLeaveProcess = false;
+        }
+    }
+
+    // 女生匹配处理函数
+    async function handleFemaleMatch() {
+        if (isLocked || isInLeaveProcess) return;
+        
+        try {
+            // 发送问候前检查对方是否离开
+            if (hasNewSystemMessage() || hasLeaveModal()) {
+                console.log("准备问候前检测到对方离开，执行被动离开");
+                await handlePartnerLeft();
+                return;
+            }
+
+            // 检查是否已发送过消息
+            const sentMessages = document.querySelectorAll(".message.right");
+            if (sentMessages.length > 0) {
+                console.log("已经发送过消息，进入聊天状态");
+                isLocked = true;
+                return;
+            }
+
+            const msgInput = document.querySelector("#msgInput");
+            const sendButton = document.querySelector("a.button-link.msg-send");
+            
+            if (msgInput && sendButton) {
+                // 发送前再次检查
+                if (hasNewSystemMessage() || hasLeaveModal()) {
+                    console.log("准备发送时检测到对方离开，执行被动离开");
+                    await handlePartnerLeft();
+                    return;
+                }
+
+                const greeting = getRandomGreeting();
+                msgInput.value = greeting;
+                msgInput.dispatchEvent(new Event('input'));
+                
+                await new Promise(r => setTimeout(r, getRandomDelay(CONFIG.CHAT_MIN_DELAY, CONFIG.CHAT_MAX_DELAY)));
+                
+                // 发送前最后检查
+                if (hasNewSystemMessage() || hasLeaveModal()) {
+                    console.log("准备点击发送时检测到对方离开，执行被动离开");
+                    await handlePartnerLeft();
+                    return;
+                }
+
+                if (msgInput.value === greeting) {
+                    sendButton.click();
+                    isLocked = true;
+                    matchCount++;
+                    localStorage.setItem('matchCount', matchCount.toString());
+                    console.log("问候语发送成功，进入聊天状态");
+                }
+            }
+        } catch (error) {
+            console.error("女生匹配处理出错:", error);
+            isLocked = false;
+        }
+    }
+
+    // 重新开始函数
+    async function startNewChat() {
+        try {
+            console.log("执行重新开始流程");
+            const restartButton = document.querySelector("span.chat-control");
+            if (restartButton && restartButton.innerText === "重新开始") {
+                console.log("点击重新开始按钮");
+                restartButton.click();
+                
+                // 等待一段时间后检查是否需要再次点击
+                await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+                
+                const secondCheck = document.querySelector("span.chat-control");
+                if (secondCheck && secondCheck.innerText === "重新开始") {
+                    console.log("重试点击重新开始");
+                    secondCheck.click();
+                }
+            }
+            isLocked = false;
+        } catch (error) {
+            console.error("重新开始操作出错:", error);
+            isLocked = false;
+        }
+    }
+
+    // 主循环
+    async function mainLoop() {
+        if (!isScriptEnabled) return;
+        
+        try {
+            // 1. 优先处理离开弹窗
+            if (hasLeaveModal()) {
+                console.log("检测到离开弹窗，优先处理");
+                await handleLeaveModal();
+                await startNewChat();
+                return;
+            }
+
+            // 2. 检查对方是否离开
+            if (hasNewSystemMessage()) {
+                console.log("检测到对方离开消息，执行被动离开流程");
+                await handlePartnerLeft();
+                return;
+            }
+
+            // 3. 如果在聊天状态，继续监控
+            if (isLocked) {
+                if (hasNewSystemMessage()) {
+                    console.log("聊天状态中检测到对方离开，执行被动离开流程");
+                    await handlePartnerLeft();
+                }
+                return;
+            }
+
+            // 4. 检查当前匹配状态
+            const partnerInfo = document.querySelector("#partnerInfoText");
+            const partnerGender = partnerInfo ? partnerInfo.innerText : null;
+            
+            if (!partnerGender) return;
+
+            // 5. 根据性别执行相应流程
+            if (partnerGender.includes("男生")) {
+                console.log("匹配到男生，执行主动离开流程");
+                await handleMaleMatch();
+            } else if (partnerGender.includes("女生")) {
+                console.log("匹配到女生，准备发送问候");
+                await handleFemaleMatch();
+            }
+
+        } catch (error) {
+            console.error("主循环出错:", error);
+            isLocked = false;
+            isInLeaveProcess = false;
+        }
+    }
+
+    function init() {
+        const statsDiv = createStatsDisplay();
+        console.log("脚本初始化完成");
+
+        setInterval(() => {
+            mainLoop();
+            updateStatsDisplay(statsDiv);
+        }, CONFIG.CHECK_INTERVAL);
+    }
+
+    setTimeout(() => {
+        console.log("脚本开始运行...");
+        init();
+    }, getRandomDelay(1000, 2000));
+})();
