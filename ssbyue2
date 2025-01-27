@@ -97,7 +97,7 @@
         return msgInput.value === originalText;
     }
 
-        function findLeaveButton() {
+    function findLeaveButton() {
         const selectors = [
             "a.button-link.leave",
             "a.button-link.chat-control",
@@ -271,16 +271,21 @@
     }
 
     async function handleFemaleMatch() {
-        if (isLocked || isInLeaveProcess) return;
+        if (isLocked || isInLeaveProcess) {
+            console.log("已锁定或正在离开过程中");
+            return;
+        }
 
         try {
             if (hasNewSystemMessage() || hasLeaveModal()) {
+                console.log("检测到系统消息或离开对话框");
                 await handlePartnerLeft();
                 return;
             }
 
             const sentMessages = document.querySelectorAll(".message.right");
             if (sentMessages.length > 0) {
+                console.log("已发送过消息");
                 isLocked = true;
                 return;
             }
@@ -289,30 +294,41 @@
             const sendButton = document.querySelector("a.button-link.msg-send");
 
             if (msgInput && sendButton) {
+                console.log("找到输入框和发送按钮，准备发送消息");
+
                 if (hasNewSystemMessage() || hasLeaveModal()) {
+                    console.log("发送前检测到系统消息或离开对话框");
                     await handlePartnerLeft();
                     return;
                 }
 
                 const greeting = getRandomGreeting();
+                console.log("选择的打招呼语句:", greeting);
+
                 const typingSuccess = await simulateTyping(msgInput, greeting);
+                console.log("打字模拟结果:", typingSuccess);
 
                 await new Promise(r => setTimeout(r, getRandomDelay(200, 500)));
 
                 if (hasNewSystemMessage() || hasLeaveModal()) {
+                    console.log("打字后检测到系统消息或离开对话框");
                     await handlePartnerLeft();
                     return;
                 }
 
                 if (typingSuccess) {
+                    console.log("准备点击发送按钮");
                     sendButton.click();
                     isLocked = true;
                     matchCount++;
                     lastActionTime = Date.now();
+                    console.log("消息已发送");
                 }
+            } else {
+                console.log("未找到输入框或发送按钮");
             }
         } catch (error) {
-            console.error("女生匹配处理出错");
+            console.error("女生匹配处理出错", error);
             isLocked = false;
         }
     }
