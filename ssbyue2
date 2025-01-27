@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         叔叔不约自动配对助手(GM优化版)
 // @namespace    wwbnq
-// @version      2.5
+// @version      2.8
 // @description  针对Greasemonkey优化的自动配对助手
 // @author       WWBNQ
 // @match        https://www.shushubuyue.net/*
@@ -18,16 +18,16 @@
     'use strict';
 
     const CONFIG = {
-        CHECK_INTERVAL: 1000 + Math.random() * 500,  // 增加基础延迟
-        MIN_DELAY: 1000,
-        MAX_DELAY: 3000,
-        LEAVE_MIN_DELAY: 1200,
-        LEAVE_MAX_DELAY: 3500,
-        CHAT_MIN_DELAY: 1000,
-        CHAT_MAX_DELAY: 3000,
+        CHECK_INTERVAL: 500 + Math.random() * 200,  // 500-700ms
+        MIN_DELAY: 400,          // 400ms
+        MAX_DELAY: 1000,         // 1000ms
+        LEAVE_MIN_DELAY: 500,    // 500ms
+        LEAVE_MAX_DELAY: 1500,   // 1500ms
+        CHAT_MIN_DELAY: 500,     // 500ms
+        CHAT_MAX_DELAY: 1200,    // 1200ms
         TYPE_SPEED: {
-            MIN: 150,            // 增加打字最小延迟
-            MAX: 350             // 增加打字最大延迟
+            MIN: 50,             // 50ms/字
+            MAX: 150             // 150ms/字
         }
     };
 
@@ -51,38 +51,53 @@
     let isInLeaveProcess = false;
     let lastActionTime = Date.now();
 
-    // 增加随机性函数
     function getRandomDelay(min, max) {
-        return Math.floor(Math.random() * (max - min + 1) + min) + Math.random() * 200;
+        return Math.floor(Math.random() * (max - min + 1) + min) + Math.random() * 100;
     }
 
     function getRandomGreeting() {
         return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
     }
 
-    // 模拟真实打字效果
     async function simulateTyping(msgInput, text) {
         msgInput.focus();
         const originalText = text;
+
+        // 降低错误概率到3%
+        const willMakeError = Math.random() < 0.03;
+        const errorPosition = willMakeError ? Math.floor(Math.random() * text.length) : -1;
+
         for(let i = 0; i < text.length; i++) {
-            if(Math.random() < 0.1) { // 10%概率输错字并删除
+            if(i === errorPosition) {
+                // 输入错误字符
                 const wrongChar = String.fromCharCode(97 + Math.floor(Math.random() * 26));
                 msgInput.value = text.substring(0, i) + wrongChar;
                 msgInput.dispatchEvent(new Event('input'));
-                await new Promise(r => setTimeout(r, getRandomDelay(100, 300)));
+
+                // 停顿一下，模拟发现错误的时间
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+
+                // 删除错误字符
                 msgInput.value = text.substring(0, i);
                 msgInput.dispatchEvent(new Event('input'));
+
+                // 短暂停顿后继续
                 await new Promise(r => setTimeout(r, getRandomDelay(100, 200)));
+
+                // 继续正常输入
+                msgInput.value = text.substring(0, i + 1);
+                msgInput.dispatchEvent(new Event('input'));
+            } else {
+                msgInput.value = text.substring(0, i + 1);
+                msgInput.dispatchEvent(new Event('input'));
             }
-            msgInput.value = text.substring(0, i + 1);
-            msgInput.dispatchEvent(new Event('input'));
             await new Promise(r => setTimeout(r,
                 getRandomDelay(CONFIG.TYPE_SPEED.MIN, CONFIG.TYPE_SPEED.MAX)));
         }
         return msgInput.value === originalText;
     }
 
-    function findLeaveButton() {
+        function findLeaveButton() {
         const selectors = [
             "a.button-link.leave",
             "a.button-link.chat-control",
@@ -118,7 +133,7 @@
     async function handleLeaveModal() {
         const confirmButton = document.querySelector(".actions-modal-button-bold.color-danger");
         if (confirmButton) {
-            await new Promise(r => setTimeout(r, getRandomDelay(300, 800)));
+            await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
             confirmButton.click();
             await new Promise(r => setTimeout(r, CONFIG.LEAVE_MAX_DELAY));
         }
@@ -210,7 +225,7 @@
 
             const leaveButton = findLeaveButton();
             if (leaveButton) {
-                await new Promise(r => setTimeout(r, getRandomDelay(500, 1000)));
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
                 leaveButton.click();
                 await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
             }
@@ -239,7 +254,7 @@
 
             const leaveButton = findLeaveButton();
             if (leaveButton) {
-                await new Promise(r => setTimeout(r, getRandomDelay(500, 1000)));
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
                 leaveButton.click();
                 await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
             }
@@ -282,7 +297,7 @@
                 const greeting = getRandomGreeting();
                 const typingSuccess = await simulateTyping(msgInput, greeting);
 
-                await new Promise(r => setTimeout(r, getRandomDelay(500, 1500)));
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 500)));
 
                 if (hasNewSystemMessage() || hasLeaveModal()) {
                     await handlePartnerLeft();
@@ -306,7 +321,7 @@
         try {
             const restartButton = document.querySelector("span.chat-control");
             if (restartButton && restartButton.innerText === "重新开始") {
-                await new Promise(r => setTimeout(r, getRandomDelay(500, 1000)));
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
                 restartButton.click();
 
                 await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
@@ -327,7 +342,6 @@
         if (!isScriptEnabled) return;
 
         try {
-            // 增加操作间隔检查
             if (Date.now() - lastActionTime < CONFIG.CHECK_INTERVAL) return;
 
             if (hasLeaveModal()) {
@@ -372,11 +386,11 @@
         const runMainLoop = () => {
             mainLoop();
             updateStatsDisplay(statsDiv);
-            setTimeout(runMainLoop, CONFIG.CHECK_INTERVAL + Math.random() * 500);
+            setTimeout(runMainLoop, CONFIG.CHECK_INTERVAL + Math.random() * 200);
         };
 
-        setTimeout(runMainLoop, getRandomDelay(2000, 3000));
+        setTimeout(runMainLoop, getRandomDelay(1000, 1500));
     }
 
-    setTimeout(init, getRandomDelay(2000, 3000));
+    setTimeout(init, getRandomDelay(1000, 1500));
 })();
