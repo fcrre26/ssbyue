@@ -41,11 +41,11 @@
        ];
 
     const TIME_GREETINGS = [
-        { start: 5, end: 10, greetings: ["早上好", "清晨好", "早安"] },
-        { start: 10, end: 13, greetings: ["中午好", "午安"] },
+        { start: 5, end: 10, greetings: ["早上好"] },
+        { start: 10, end: 13, greetings: ["中午好"] },
         { start: 13, end: 18, greetings: ["下午好"] },
-        { start: 18, end: 24, greetings: ["晚上好", "傍晚好"] },
-        { start: 0, end: 5, greetings: ["夜深了，注意休息哦"] }
+        { start: 18, end: 24, greetings: ["晚上好"] },
+        { start: 0, end: 5, greetings: ["夜深了，聊会吧"] }
     ];
 
     let isLocked = false;
