@@ -176,6 +176,10 @@
         }
     })();
 
+    // 统计：发现女生次数 与 因地区筛选被跳过次数
+    let statsFoundFemale = 0;
+    let statsSkippedByRegion = 0;
+
     function getRandomDelay(min, max) {
         return Math.floor(Math.random() * (max - min + 1) + min) + Math.random() * 100;
     }
@@ -416,6 +420,9 @@
             <div style="margin-bottom: 8px;">
                 <span style="color: #2196F3;">📍</span> 筛选: ${getRegionShortDisplay()}
             </div>
+            <div style="margin-bottom: 8px; font-size: 12px; color: rgba(255,255,255,0.8);">
+                👩 女生: ${statsFoundFemale}，筛掉: ${statsSkippedByRegion}
+            </div>
             <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
                 时间: ${timeStr}
             </div>
@@ -501,10 +508,14 @@
 
             // 地区筛选（可开关）
             const partnerInfo = document.querySelector("#partnerInfoText");
+            // 记录：发现女生
+            statsFoundFemale++;
             if (isRegionFilterEnabled) {
                 const partnerText = partnerInfo ? partnerInfo.innerText : "";
                 const isTargetRegion = CURRENT_REGION_KEYWORDS.some(keyword => partnerText.includes(keyword));
                 if (!partnerInfo || !isTargetRegion) {
+                    // 记录：被地区筛选跳过
+                    statsSkippedByRegion++;
                     console.log("对方不是目标地区，跳过配对");
                     await handleMaleMatch(); // 按男生处理，离开当前配对
                     return;
