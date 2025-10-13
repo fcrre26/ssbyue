@@ -31,6 +31,52 @@
         }
     };
 
+    // 可自定义的筛选省份（页面文本需为这些全称）
+    // 例如：['北京','河北','天津']，可自行增删
+    const REGION_KEYWORDS = ["北京", "天津", "河北"]; // 用户可在此行自定义
+
+    // 全称到短标映射，用于面板展示（不影响内部匹配）
+    const REGION_SHORT_MAP = {
+        "北京": "京",
+        "天津": "津",
+        "河北": "冀",
+        "上海": "沪",
+        "重庆": "渝",
+        "内蒙古": "蒙",
+        "黑龙江": "黑",
+        "吉林": "吉",
+        "辽宁": "辽",
+        "山东": "鲁",
+        "山西": "晋",
+        "陕西": "陕",
+        "甘肃": "甘",
+        "青海": "青",
+        "河南": "豫",
+        "江苏": "苏",
+        "浙江": "浙",
+        "安徽": "皖",
+        "江西": "赣",
+        "福建": "闽",
+        "广东": "粤",
+        "广西": "桂",
+        "海南": "琼",
+        "四川": "川",
+        "贵州": "黔",
+        "云南": "滇",
+        "西藏": "藏",
+        "宁夏": "宁",
+        "新疆": "新",
+        "湖北": "鄂",
+        "湖南": "湘",
+        "河南": "豫"
+    };
+
+    function getRegionShortDisplay() {
+        if (!isRegionFilterEnabled) return "不限";
+        const shorts = REGION_KEYWORDS.map(name => REGION_SHORT_MAP[name] || name).join('/');
+        return shorts;
+    }
+
     const GREETINGS = [
         "hi，宝宝~",
         "你好呀，宝宝",
@@ -249,7 +295,7 @@
                 状态: ${isLocked ? '聊天' : '搜索'}
             </div>
             <div style="margin-bottom: 8px;">
-                <span style="color: #2196F3;">📍</span> 筛选: ${isRegionFilterEnabled ? '北京/河北/天津' : '不限'}
+                <span style="color: #2196F3;">📍</span> 筛选: ${getRegionShortDisplay()}
             </div>
             <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
                 时间: ${timeStr}
@@ -337,9 +383,8 @@
             // 地区筛选（可开关）
             const partnerInfo = document.querySelector("#partnerInfoText");
             if (isRegionFilterEnabled) {
-                const regionKeywords = ["北京", "河北", "天津"];
                 const partnerText = partnerInfo ? partnerInfo.innerText : "";
-                const isTargetRegion = regionKeywords.some(keyword => partnerText.includes(keyword));
+                const isTargetRegion = REGION_KEYWORDS.some(keyword => partnerText.includes(keyword));
                 if (!partnerInfo || !isTargetRegion) {
                     console.log("对方不是目标地区，跳过配对");
                     await handleMaleMatch(); // 按男生处理，离开当前配对
