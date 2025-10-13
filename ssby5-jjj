@@ -1,0 +1,528 @@
+// ==UserScript==
+// @name         叔叔不约自动配对助手(京津冀)
+// @namespace    wwbnq
+// @version      2.9
+// @description  针对Greasemonkey优化的自动配对助手
+// @author       WWBNQ
+// @match        https://www.shushubuyue.net/*
+// @match        https://www.shushubuyue.com/*
+// @match        http://www.shushubuyue.net/*
+// @match        http://www.shushubuyue.com/*
+// @grant        GM.setValue
+// @grant        GM.getValue
+// @grant        window.close
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const CONFIG = {
+        CHECK_INTERVAL: 500 + Math.random() * 200,  // 500-700ms
+        MIN_DELAY: 400,          // 400ms
+        MAX_DELAY: 1000,         // 1000ms
+        LEAVE_MIN_DELAY: 500,    // 500ms
+        LEAVE_MAX_DELAY: 1500,   // 1500ms
+        CHAT_MIN_DELAY: 500,     // 500ms
+        CHAT_MAX_DELAY: 1200,    // 1200ms
+        TYPE_SPEED: {
+            MIN: 50,             // 50ms/字
+            MAX: 150             // 150ms/字
+        }
+    };
+
+    const GREETINGS = [
+        "hi，宝宝~",
+        "你好呀，宝宝",
+        "hello，宝宝",
+        "你好，宝宝",
+        "嗨，宝宝",
+        "hey，宝宝",
+       ];
+
+    const TIME_GREETINGS = [
+        { start: 5, end: 10, greetings: ["早上好"] },
+        { start: 10, end: 13, greetings: ["中午好"] },
+        { start: 13, end: 18, greetings: ["下午好"] },
+        { start: 18, end: 24, greetings: ["晚上好"] },
+        { start: 0, end: 5, greetings: ["夜深了，聊会吧"] }
+    ];
+
+    let isLocked = false;
+    let isScriptEnabled = true;
+    let matchCount = 0;
+    let startTime = Date.now();
+    let isInLeaveProcess = false;
+    let lastActionTime = Date.now();
+    let hasGreeted = false;
+    let lastSessionId = null;
+    let hasSecondReplied = false;
+    let isRegionFilterEnabled = (function() {
+        try {
+            const saved = localStorage.getItem("shushu_region_filter_enabled");
+            if (saved === null) return true; // 默认开启
+            return saved === "true";
+        } catch (e) {
+            return true;
+        }
+    })();
+
+    function getRandomDelay(min, max) {
+        return Math.floor(Math.random() * (max - min + 1) + min) + Math.random() * 100;
+    }
+
+    function getRandomGreeting() {
+        const hour = new Date().getHours();
+        let timeGreetings = [];
+        for (const tg of TIME_GREETINGS) {
+            if (hour >= tg.start && hour < tg.end) {
+                timeGreetings = tg.greetings;
+                break;
+            }
+        }
+        // 50%概率用时间问候，否则用原有问候
+        if (timeGreetings.length && Math.random() < 0.5) {
+            return timeGreetings[Math.floor(Math.random() * timeGreetings.length)];
+        }
+        return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+    }
+
+    const SECOND_REPLIES = [
+        "宝宝多大了",
+        "宝宝喜欢穿白丝或者黑丝吗？",
+    ];
+
+    function getRandomSecondReply() {
+        return SECOND_REPLIES[Math.floor(Math.random() * SECOND_REPLIES.length)];
+    }
+
+    async function simulateTyping(msgInput, text) {
+        msgInput.focus();
+        const originalText = text;
+        for(let i = 0; i < text.length; i++) {
+            msgInput.value = text.substring(0, i + 1);
+            msgInput.dispatchEvent(new Event('input'));
+            await new Promise(r => setTimeout(r,
+                getRandomDelay(CONFIG.TYPE_SPEED.MIN, CONFIG.TYPE_SPEED.MAX)));
+        }
+        return msgInput.value === originalText;
+    }
+
+    function findLeaveButton() {
+        const selectors = [
+            "a.button-link.leave",
+            "a.button-link.chat-control",
+            "a.leave",
+            ".chat-control",
+            "span.chat-control",
+            "a[class*='leave']",
+            "a[class*='chat-control']"
+        ];
+
+        for (const selector of selectors) {
+            const button = document.querySelector(selector);
+            if (button) return button;
+        }
+        return null;
+    }
+
+    function hasNewSystemMessage() {
+        try {
+            // 直接检查页面文本中是否包含"对方离开了"
+            const pageText = document.body.innerText;
+            return pageText.includes("对方离开了");
+        } catch (error) {
+            console.error("系统消息检查出错:", error);
+            return false;
+        }
+    }
+
+    function hasLeaveModal() {
+        return !!document.querySelector(".actions-modal");
+    }
+
+    async function handleLeaveModal() {
+        const confirmButton = document.querySelector(".actions-modal-button-bold.color-danger");
+        if (confirmButton) {
+            await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+            confirmButton.click();
+            await new Promise(r => setTimeout(r, CONFIG.LEAVE_MAX_DELAY));
+        }
+    }
+
+    function createStatsDisplay() {
+        const statsDiv = document.createElement('div');
+        statsDiv.style.cssText = `
+            position: fixed;
+            top: 50px;
+            left: 10px;
+            background: linear-gradient(145deg, rgba(0,0,0,0.2), rgba(40,40,40,0.3));
+            color: rgba(255,255,255,0.9);
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 14px;
+            z-index: 9999;
+            font-family: 'Arial', sans-serif;
+            box-shadow: 0 4px 15px rgba(0,0,0,.1);
+            border: 1px solid rgba(255,255,255,0.1);
+            min-width: 150px;
+            backdrop-filter: blur(2px);
+            transition: all 0.3s ease;
+            user-select: none;
+            opacity: 0.85;
+        `;
+
+        const toggleButton = document.createElement('button');
+        toggleButton.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: ${isScriptEnabled ? '#4CAF50' : '#f44336'};
+            border: none;
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0.8;
+        `;
+
+        toggleButton.addEventListener('click', () => {
+            isScriptEnabled = !isScriptEnabled;
+            toggleButton.style.background = isScriptEnabled ? '#4CAF50' : '#f44336';
+        });
+
+        // 地区筛选开关
+        const regionToggle = document.createElement('button');
+        regionToggle.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: ${isRegionFilterEnabled ? '#2196F3' : '#607D8B'};
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 2px 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0.9;
+        `;
+        regionToggle.textContent = isRegionFilterEnabled ? '京津冀:开' : '京津冀:关';
+        regionToggle.addEventListener('click', () => {
+            isRegionFilterEnabled = !isRegionFilterEnabled;
+            localStorage.setItem('shushu_region_filter_enabled', String(isRegionFilterEnabled));
+            regionToggle.style.background = isRegionFilterEnabled ? '#2196F3' : '#607D8B';
+            regionToggle.textContent = isRegionFilterEnabled ? '京津冀:开' : '京津冀:关';
+        });
+
+        statsDiv.appendChild(toggleButton);
+        statsDiv.appendChild(regionToggle);
+        
+        // 用于承载动态统计内容的容器，避免刷新时移除按钮
+        const contentDiv = document.createElement('div');
+        contentDiv.style.cssText = `margin-top: 24px;`;
+        statsDiv.appendChild(contentDiv);
+        // 存储引用，供 updateStatsDisplay 使用
+        statsDiv._contentDiv = contentDiv;
+        document.body.appendChild(statsDiv);
+        return statsDiv;
+    }
+
+    function updateStatsDisplay(statsDiv) {
+        const runTime = Math.floor((Date.now() - startTime) / 60000);
+        const hours = Math.floor(runTime / 60);
+        const minutes = runTime % 60;
+        const timeStr = hours > 0 ? `${hours}时${minutes}分` : `${minutes}分`;
+
+        const target = statsDiv._contentDiv || statsDiv; // 兼容旧结构
+        target.innerHTML = `
+            <div style="text-align: center; margin-bottom: 10px; font-weight: bold;
+                        border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">
+                配对统计
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="color: #ff6b6b;">♥</span> 次数: ${matchCount}
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="color: ${isLocked ? '#4CAF50' : '#FFA726'};">●</span>
+                状态: ${isLocked ? '聊天' : '搜索'}
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="color: #2196F3;">📍</span> 筛选: ${isRegionFilterEnabled ? '北京/河北/天津' : '不限'}
+            </div>
+            <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
+                时间: ${timeStr}
+            </div>
+        `;
+    }
+
+    async function handlePartnerLeft() {
+        if (isInLeaveProcess) return;
+
+        console.log("检测到对方离开，准备重新开始");
+        isLocked = false;
+        isInLeaveProcess = true;
+
+        try {
+            await new Promise(r => setTimeout(r, 500));
+
+            if (hasLeaveModal()) {
+                await handleLeaveModal();
+            }
+
+            const leaveButton = findLeaveButton();
+            if (leaveButton) {
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+                leaveButton.click();
+                await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+            }
+
+            await startNewChat();
+
+        } catch (error) {
+            console.error("离开处理出错:", error);
+        } finally {
+            isLocked = false;
+            isInLeaveProcess = false;
+            console.log("重新开始完成");
+        }
+    }
+
+    async function handleMaleMatch() {
+        if (isInLeaveProcess) return;
+
+        try {
+            isInLeaveProcess = true;
+
+            if (hasLeaveModal()) {
+                await handleLeaveModal();
+                await startNewChat();
+                return;
+            }
+
+            const leaveButton = findLeaveButton();
+            if (leaveButton) {
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+                leaveButton.click();
+                await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+            }
+
+            await handleLeaveModal();
+            await startNewChat();
+
+        } catch (error) {
+            console.error("男生匹配处理出错:", error);
+        } finally {
+            isLocked = false;
+            isInLeaveProcess = false;
+        }
+    }
+
+    async function handleFemaleMatch() {
+        if (isLocked || isInLeaveProcess) {
+            console.log("已锁定或正在离开过程中");
+            return;
+        }
+
+        try {
+            if (hasNewSystemMessage()) {
+                console.log("检测到对方离开消息");
+                await handlePartnerLeft();
+                return;
+            }
+
+            await new Promise(r => setTimeout(r, 500));
+
+            // 地区筛选（可开关）
+            const partnerInfo = document.querySelector("#partnerInfoText");
+            if (isRegionFilterEnabled) {
+                const regionKeywords = ["北京", "河北", "天津"];
+                const partnerText = partnerInfo ? partnerInfo.innerText : "";
+                const isTargetRegion = regionKeywords.some(keyword => partnerText.includes(keyword));
+                if (!partnerInfo || !isTargetRegion) {
+                    console.log("对方不是目标地区，跳过配对");
+                    await handleMaleMatch(); // 按男生处理，离开当前配对
+                    return;
+                }
+            }
+
+            const msgInput = document.querySelector("#msgInput");
+            const sendButton = document.querySelector("a.button-link.msg-send");
+            // 获取当前会话唯一标识
+            const sessionId = getCurrentSessionId();
+            if (!sessionId || sessionId.trim() === "") {
+                // 可选：console.log("等待sessionId加载...");
+                return;
+            }
+
+            // 检查本地存储是否已问候
+            const greetedSession = localStorage.getItem("shushu_greeted_session");
+            if (greetedSession === sessionId) {
+                hasGreeted = true;
+            } else {
+                hasGreeted = false;
+            }
+
+            if (msgInput && sendButton && !hasGreeted) {
+                isLocked = true;
+
+                const greeting = getRandomGreeting();
+                const typingSuccess = await simulateTyping(msgInput, greeting);
+
+                if (hasNewSystemMessage()) {
+                    isLocked = false;
+                    await handlePartnerLeft();
+                    return;
+                }
+
+                if (typingSuccess) {
+                    sendButton.click();
+                    matchCount++;
+                    lastActionTime = Date.now();
+                    hasGreeted = true;
+                    lastSessionId = sessionId;
+                    localStorage.setItem("shushu_greeted_session", sessionId); // 记录已问候
+                    console.log("消息已发送");
+                }
+            }
+        } catch (error) {
+            console.error("女生匹配处理出错:", error);
+        } finally {
+            if (!document.querySelector(".message.right")) {
+                isLocked = false;
+            }
+        }
+    }
+
+    async function startNewChat() {
+        try {
+            await new Promise(r => setTimeout(r, 500));
+
+            const restartButton = document.querySelector("span.chat-control");
+            if (restartButton && (restartButton.innerText === "重新开始" || restartButton.innerText.includes("开始"))) {
+                console.log("点击重新开始按钮");
+                await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+                restartButton.click();
+
+                let retryCount = 0;
+                const maxRetries = 3;
+
+                while (retryCount < maxRetries) {
+                    await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+
+                    const secondCheck = document.querySelector("span.chat-control");
+                    if (secondCheck && (secondCheck.innerText === "重新开始" || secondCheck.innerText.includes("开始"))) {
+                        console.log("重试点击重新开始");
+                        secondCheck.click();
+                    } else {
+                        break;
+                    }
+                    retryCount++;
+                }
+            }
+            isLocked = false;
+            hasGreeted = false;
+            lastSessionId = null;
+            localStorage.removeItem("shushu_greeted_session");
+            hasSecondReplied = false;
+        } catch (error) {
+            console.error("重新开始出错:", error);
+            isLocked = false;
+        }
+    }
+
+    function getCurrentSessionId() {
+        const partnerInfo = document.querySelector("#partnerInfoText");
+        if (partnerInfo) {
+            return partnerInfo.innerText.trim();
+        }
+        return null;
+    }
+
+    async function mainLoop() {
+        if (!isScriptEnabled) return;
+
+        try {
+            if (Date.now() - lastActionTime < CONFIG.CHECK_INTERVAL) return;
+
+            if (hasLeaveModal()) {
+                await handleLeaveModal();
+                await startNewChat();
+                return;
+            }
+
+            if (hasNewSystemMessage()) {
+                await handlePartnerLeft();
+                return;
+            }
+
+            if (isLocked) {
+                if (hasNewSystemMessage()) {
+                    await handlePartnerLeft();
+                }
+                return;
+            }
+
+            const partnerInfo = document.querySelector("#partnerInfoText");
+            const partnerGender = partnerInfo ? partnerInfo.innerText : null;
+
+            // 如果元素未加载或内容为空，延迟重试，不做任何操作
+            if (!partnerGender || partnerGender.trim() === "") {
+                // 可选：console.log("等待partnerInfoText加载...");
+                return;
+            }
+
+            if (partnerGender.includes("男生")) {
+                await handleMaleMatch();
+            } else if (partnerGender.includes("女生")) {
+                await handleFemaleMatch();
+                // 检查是否需要自动二次回复
+                await trySecondReply();
+            }
+
+        } catch (error) {
+            console.error("主循环出错:", error);
+            isLocked = false;
+            isInLeaveProcess = false;
+        }
+    }
+
+    async function trySecondReply() {
+        if (hasSecondReplied) return;
+        // 检查是否有对方的消息（假设左侧消息 class 为 .message.left）
+        const leftMsgs = document.querySelectorAll('.message.left');
+        // 只在有对方消息且自己还没二次回复时触发
+        if (leftMsgs.length > 0) {
+            // 检查自己是否已经发过第二句（防止多次触发）
+            const rightMsgs = document.querySelectorAll('.message.right');
+            if (rightMsgs.length < 2) {
+                const msgInput = document.querySelector("#msgInput");
+                const sendButton = document.querySelector("a.button-link.msg-send");
+                if (msgInput && sendButton) {
+                    const reply = getRandomSecondReply();
+                    // 如果输入框内容已经是要发的内容，直接返回
+                    if (msgInput.value === reply) return;
+                    hasSecondReplied = true; // 提前设置，防止并发
+                    await simulateTyping(msgInput, reply);
+                    sendButton.click();
+                    // 可选：console.log("已自动二次回复");
+                }
+            }
+        }
+    }
+
+    function init() {
+        const statsDiv = createStatsDisplay();
+
+        const runMainLoop = () => {
+            mainLoop();
+            updateStatsDisplay(statsDiv);
+            setTimeout(runMainLoop, CONFIG.CHECK_INTERVAL + Math.random() * 200);
+        };
+
+        setTimeout(runMainLoop, getRandomDelay(1000, 1500));
+    }
+
+    setTimeout(init, getRandomDelay(1000, 1500));
+})();
