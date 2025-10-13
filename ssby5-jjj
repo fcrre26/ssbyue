@@ -429,6 +429,46 @@
         statsDiv.appendChild(toggleButton);
         statsDiv.appendChild(regionToggle);
         statsDiv.appendChild(locateButton);
+
+        // 手动退出按钮（安全触发离开流程）
+        const manualExitButton = document.createElement('button');
+        manualExitButton.style.cssText = `
+            position: absolute;
+            top: 40px;
+            left: 90px;
+            background: #e53935;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 1px 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0.9;
+        `;
+        manualExitButton.textContent = '退出';
+        manualExitButton.addEventListener('click', async () => {
+            if (manualExitButton.disabled) return;
+            manualExitButton.disabled = true;
+            try {
+                isInLeaveProcess = true;
+                const leaveButton = findLeaveButton();
+                if (leaveButton) {
+                    isProgrammaticLeaveClick = true;
+                    leaveButton.click();
+                    isProgrammaticLeaveClick = false;
+                    await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
+                }
+                await handleLeaveModal();
+                await startNewChat();
+            } catch(e) {
+                console.error('手动退出失败', e);
+            } finally {
+                isInLeaveProcess = false;
+                manualExitButton.disabled = false;
+            }
+        });
+        statsDiv.appendChild(manualExitButton);
         
         // 用于承载动态统计内容的容器，避免刷新时移除按钮
         const contentDiv = document.createElement('div');
