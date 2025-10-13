@@ -71,10 +71,73 @@
         "河南": "豫"
     };
 
+    const REGION_STORAGE_KEY = 'shushu_region_keywords';
+
+    function loadRegionKeywords() {
+        try {
+            const stored = localStorage.getItem(REGION_STORAGE_KEY);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    // 与默认列表合并，避免旧版本覆盖导致只剩定位省份
+                    const merged = Array.from(new Set([ ...REGION_KEYWORDS, ...parsed ]));
+                    return merged;
+                }
+            }
+        } catch (e) {}
+        return REGION_KEYWORDS.slice();
+    }
+
+    function saveRegionKeywords(regions) {
+        try {
+            localStorage.setItem(REGION_STORAGE_KEY, JSON.stringify(regions));
+        } catch (e) {}
+    }
+
+    let CURRENT_REGION_KEYWORDS = loadRegionKeywords();
+
     function getRegionShortDisplay() {
         if (!isRegionFilterEnabled) return "不限";
-        const shorts = REGION_KEYWORDS.map(name => REGION_SHORT_MAP[name] || name).join('/');
-        return shorts;
+        const shorts = CURRENT_REGION_KEYWORDS.map(name => REGION_SHORT_MAP[name] || name).join('/');
+        return shorts || '不限';
+    }
+
+    function normalizeProvinceName(name) {
+        if (!name) return '';
+        let n = name.trim();
+        const specialMap = {
+            '内蒙古自治区': '内蒙古',
+            '广西壮族自治区': '广西',
+            '宁夏回族自治区': '宁夏',
+            '新疆维吾尔自治区': '新疆',
+            '西藏自治区': '西藏',
+            '香港特别行政区': '香港',
+            '澳门特别行政区': '澳门'
+        };
+        if (specialMap[n]) return specialMap[n];
+        n = n.replace(/(省|市|自治区|特别行政区)$/g, '');
+        return n;
+    }
+
+    async function setRegionFromLocation(lat, lon) {
+        try {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=5&addressdetails=1`;
+            const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            const data = await resp.json();
+            const addr = data && data.address ? data.address : {};
+            const raw = addr.state || addr.county || addr.region || addr.province || '';
+            const province = normalizeProvinceName(raw);
+            if (province) {
+                const merged = Array.from(new Set([ ...REGION_KEYWORDS, ...(CURRENT_REGION_KEYWORDS || []), province ]));
+                CURRENT_REGION_KEYWORDS = merged;
+                saveRegionKeywords(CURRENT_REGION_KEYWORDS);
+                console.log('定位到省份并已加入筛选:', province, '当前筛选集:', CURRENT_REGION_KEYWORDS);
+                return province;
+            }
+        } catch (e) {
+            console.error('定位或反查失败:', e);
+        }
+        return null;
     }
 
     const GREETINGS = [
@@ -248,7 +311,7 @@
             color: #fff;
             border: none;
             border-radius: 8px;
-            padding: 2px 6px;
+            padding: 1px 6px;
             font-size: 12px;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -260,14 +323,70 @@
             localStorage.setItem('shushu_region_filter_enabled', String(isRegionFilterEnabled));
             regionToggle.style.background = isRegionFilterEnabled ? '#2196F3' : '#607D8B';
             regionToggle.textContent = isRegionFilterEnabled ? '京津冀:开' : '京津冀:关';
+            // 立即刷新展示
+            if (statsDiv._contentDiv) updateStatsDisplay(statsDiv);
+        });
+
+        // 定位按钮：自动设置本地省份为筛选
+        const locateButton = document.createElement('button');
+        locateButton.style.cssText = `
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 1px 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0.9;
+        `;
+        locateButton.textContent = '定位:本地';
+        locateButton.addEventListener('click', async () => {
+            try {
+                if (!navigator.geolocation) {
+                    alert('此浏览器不支持定位');
+                    return;
+                }
+                locateButton.disabled = true;
+                locateButton.textContent = '定位中...';
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    const { latitude, longitude } = pos.coords;
+                    const province = await setRegionFromLocation(latitude, longitude);
+                    if (province) {
+                        isRegionFilterEnabled = true;
+                        localStorage.setItem('shushu_region_filter_enabled', 'true');
+                        regionToggle.style.background = '#2196F3';
+                        regionToggle.textContent = '京津冀:开';
+                        // 刷新显示，显示为 累加后的短标集
+                        if (statsDiv._contentDiv) updateStatsDisplay(statsDiv);
+                        alert('已将本地省份加入筛选：' + province + '（与当前列表累加）');
+                    } else {
+                        alert('未能识别省份');
+                    }
+                    locateButton.disabled = false;
+                    locateButton.textContent = '定位:本地';
+                }, (err) => {
+                    alert('定位失败：' + err.message);
+                    locateButton.disabled = false;
+                    locateButton.textContent = '定位:本地';
+                }, { enableHighAccuracy: true, timeout: 10000 });
+            } catch (e) {
+                alert('定位异常');
+                locateButton.disabled = false;
+                locateButton.textContent = '定位:本地';
+            }
         });
 
         statsDiv.appendChild(toggleButton);
         statsDiv.appendChild(regionToggle);
+        statsDiv.appendChild(locateButton);
         
         // 用于承载动态统计内容的容器，避免刷新时移除按钮
         const contentDiv = document.createElement('div');
-        contentDiv.style.cssText = `margin-top: 24px;`;
+        contentDiv.style.cssText = `margin-top: 56px;`;
         statsDiv.appendChild(contentDiv);
         // 存储引用，供 updateStatsDisplay 使用
         statsDiv._contentDiv = contentDiv;
@@ -384,7 +503,7 @@
             const partnerInfo = document.querySelector("#partnerInfoText");
             if (isRegionFilterEnabled) {
                 const partnerText = partnerInfo ? partnerInfo.innerText : "";
-                const isTargetRegion = REGION_KEYWORDS.some(keyword => partnerText.includes(keyword));
+                const isTargetRegion = CURRENT_REGION_KEYWORDS.some(keyword => partnerText.includes(keyword));
                 if (!partnerInfo || !isTargetRegion) {
                     console.log("对方不是目标地区，跳过配对");
                     await handleMaleMatch(); // 按男生处理，离开当前配对
