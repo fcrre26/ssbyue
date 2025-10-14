@@ -313,12 +313,12 @@
             left: 10px;
             background: linear-gradient(145deg, rgba(0,0,0,0.2), rgba(40,40,40,0.3));
             color: rgba(255,255,255,0.9);
-            padding: 15px;
-            border-radius: 12px;
+            padding: 10px;
+            border-radius: 10px;
             font-size: 14px;
             z-index: 9999;
             font-family: 'Arial', sans-serif;
-            box-shadow: 0 4px 15px rgba(0,0,0,.1);
+            box-shadow: 0 3px 10px rgba(0,0,0,.08);
             border: 1px solid rgba(255,255,255,0.1);
             min-width: 150px;
             backdrop-filter: blur(2px);
@@ -469,7 +469,7 @@
             }
         });
         statsDiv.appendChild(manualExitButton);
-        
+
         // 用于承载动态统计内容的容器，避免刷新时移除按钮
         const contentDiv = document.createElement('div');
         contentDiv.style.cssText = `margin-top: 56px;`;
@@ -488,24 +488,24 @@
 
         const target = statsDiv._contentDiv || statsDiv; // 兼容旧结构
         target.innerHTML = `
-            <div style="text-align: center; margin-bottom: 10px; font-weight: bold;
-                        border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">
-                配对统计
+            <div style=\"margin-bottom: 6px; line-height: 1.2;\">
+                <span style=\"display:inline-block;width:16px;text-align:center;font-size:14px;color:#ff6b6b;\">♥</span>
+                次数: ${matchCount}
             </div>
-            <div style="margin-bottom: 8px;">
-                <span style="color: #ff6b6b;">♥</span> 次数: ${matchCount}
-            </div>
-            <div style="margin-bottom: 8px;">
-                <span style="color: ${isLocked ? '#4CAF50' : '#FFA726'};">●</span>
+            <div style=\"margin-bottom: 6px; line-height: 1.2;\">
+                <span style=\"display:inline-block;width:16px;text-align:center;font-size:14px;color:${isLocked ? '#4CAF50' : '#FFA726'};\">●</span>
                 状态: ${isLocked ? '聊天' : '搜索'}
             </div>
-            <div style="margin-bottom: 8px;">
-                <span style="color: #2196F3;">📍</span> 筛选: ${getRegionShortDisplay()}
+            <div style=\"margin-bottom: 6px; line-height: 1.2;\">
+                <span style=\"display:inline-block;width:16px;text-align:center;font-size:14px;color:#2196F3;\">📍</span>
+                筛选: ${getRegionShortDisplay()}
             </div>
-            <div style="margin-bottom: 8px; font-size: 12px; color: rgba(255,255,255,0.8);">
-                👩 女生: ${matchCount}，筛掉: ${statsSkippedByRegion}
+            <div style=\"margin-bottom: 6px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.2;\">
+                <span style=\"display:inline-block;width:16px;text-align:center;\">👩</span>
+                女生: ${matchCount}，筛掉: ${statsSkippedByRegion}
             </div>
-            <div style="font-size: 12px; color: rgba(255,255,255,0.7);">
+            <div style=\"font-size: 12px; color: rgba(255,255,255,0.8); line-height: 1.2;\">
+                <span style=\"display:inline-block;width:16px;text-align:center;\">🕒</span>
                 时间: ${timeStr}
             </div>
         `;
