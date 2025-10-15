@@ -184,7 +184,8 @@
     let isProgrammaticLeaveClick = false;
 
     function canLeaveNow() {
-        return hasNewSystemMessage();
+        // 纯手动优先：始终拦截用户手点（仅程序白名单放行）
+        return false;
     }
 
     function setupLeaveGuard() {
@@ -734,15 +735,9 @@ function hasNewSystemMessage() {
                 return;
             }
 
-            if (hasNewSystemMessage()) {
-                await handlePartnerLeft();
-                return;
-            }
+            // 纯手动优先：检测到对方离开也不自动处理，交由面板“退出”手动触发
 
             if (isLocked) {
-                if (hasNewSystemMessage()) {
-                    await handlePartnerLeft();
-                }
                 return;
             }
 
@@ -756,8 +751,10 @@ function hasNewSystemMessage() {
             }
 
             if (partnerGender.includes("男生")) {
+                // 男生：自动离开
                 await handleMaleMatch();
             } else if (partnerGender.includes("女生")) {
+                // 女生：不自动离开、不自动重连，改为纯手动（面板“退出”）
                 await handleFemaleMatch();
                 // 检查是否需要自动二次回复
                 await trySecondReply();
