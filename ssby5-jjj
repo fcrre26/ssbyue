@@ -184,7 +184,7 @@
     let isProgrammaticLeaveClick = false;
 
     function canLeaveNow() {
-        return isInLeaveProcess || hasNewSystemMessage();
+        return hasNewSystemMessage();
     }
 
     function setupLeaveGuard() {
@@ -281,16 +281,31 @@
         return null;
     }
 
-    function hasNewSystemMessage() {
+function hasNewSystemMessage() {
         try {
-            // 直接检查页面文本中是否包含"对方离开了"
-            const pageText = document.body.innerText;
+            // 优先检查最近的系统消息气泡，避免因全页残留文本误判
+            const systemCandidates = Array.from(document.querySelectorAll('.message.system, .system, .chat-system, .system-message'));
+            for (let i = systemCandidates.length - 1; i >= 0 && i >= systemCandidates.length - 3; i--) {
+                const text = (systemCandidates[i] && systemCandidates[i].innerText) || '';
+                if (text.includes("对方离开了")) return true;
+            }
+
+            // 其次尝试从聊天区域的最后一项判断
+            const chatArea = document.querySelector('.messages, .chat, .chat-area');
+            if (chatArea && chatArea.lastElementChild) {
+                const last = chatArea.lastElementChild;
+                const t = (last && last.innerText) || '';
+                if (t.includes("对方离开了")) return true;
+            }
+
+            // 兜底：全页文本匹配（可能产生误判）
+            const pageText = document.body ? document.body.innerText : '';
             return pageText.includes("对方离开了");
         } catch (error) {
             console.error("系统消息检查出错:", error);
             return false;
         }
-    }
+}
 
     function hasLeaveModal() {
         return !!document.querySelector(".actions-modal");
@@ -469,7 +484,7 @@
             }
         });
         statsDiv.appendChild(manualExitButton);
-
+        
         // 用于承载动态统计内容的容器，避免刷新时移除按钮
         const contentDiv = document.createElement('div');
         contentDiv.style.cssText = `margin-top: 56px;`;
@@ -555,7 +570,9 @@
             const leaveButton = findLeaveButton();
             if (leaveButton) {
                 await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
+                isProgrammaticLeaveClick = true;
                 leaveButton.click();
+                isProgrammaticLeaveClick = false;
                 await new Promise(r => setTimeout(r, CONFIG.LEAVE_MIN_DELAY));
             }
 
@@ -664,7 +681,9 @@
             if (restartButton && (restartButton.innerText === "重新开始" || restartButton.innerText.includes("开始"))) {
                 console.log("点击重新开始按钮");
                 await new Promise(r => setTimeout(r, getRandomDelay(200, 400)));
-                restartButton.click();
+            isProgrammaticLeaveClick = true;
+            restartButton.click();
+            isProgrammaticLeaveClick = false;
 
                 let retryCount = 0;
                 const maxRetries = 3;
