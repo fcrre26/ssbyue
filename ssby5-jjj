@@ -166,6 +166,10 @@
     let hasGreeted = false;
     let lastSessionId = null;
     let hasSecondReplied = false;
+    // 防重复问候：进行中标记、上次会话标识与时间戳节流
+    let isGreetingInProgress = false;
+    let lastGreetingSessionId = null;
+    let lastGreetingAt = 0;
     let isRegionFilterEnabled = (function() {
         try {
             const saved = localStorage.getItem("shushu_region_filter_enabled");
@@ -644,7 +648,20 @@ function hasNewSystemMessage() {
             }
 
             if (msgInput && sendButton && !hasGreeted) {
+                // 多重防抖：若已有自己消息、正在问候、或节流时间未到，则不问候
+                const myMsgs = document.querySelectorAll('.message.right');
+                if (myMsgs && myMsgs.length > 0) {
+                    return;
+                }
+                if (isGreetingInProgress) {
+                    return;
+                }
+                const nowTs = Date.now();
+                if (lastGreetingSessionId === sessionId && nowTs - lastGreetingAt < 8000) {
+                    return;
+                }
                 isLocked = true;
+                isGreetingInProgress = true;
 
                 const greeting = getRandomGreeting();
                 const typingSuccess = await simulateTyping(msgInput, greeting);
@@ -661,6 +678,8 @@ function hasNewSystemMessage() {
                     lastActionTime = Date.now();
                     hasGreeted = true;
                     lastSessionId = sessionId;
+                    lastGreetingSessionId = sessionId;
+                    lastGreetingAt = Date.now();
                     localStorage.setItem("shushu_greeted_session", sessionId); // 记录已问候
                     console.log("消息已发送");
                 }
@@ -668,6 +687,8 @@ function hasNewSystemMessage() {
         } catch (error) {
             console.error("女生匹配处理出错:", error);
         } finally {
+            // 重置问候进行中标记；仍通过已发消息与 hasGreeted 控制后续行为
+            isGreetingInProgress = false;
             if (!document.querySelector(".message.right")) {
                 isLocked = false;
             }
