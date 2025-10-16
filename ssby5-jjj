@@ -150,9 +150,9 @@
        ];
 
     const TIME_GREETINGS = [
-        { start: 5, end: 10, greetings: ["早上好"] },
-        { start: 10, end: 13, greetings: ["中午好"] },
-        { start: 13, end: 18, greetings: ["下午好"] },
+        { start: 5, end: 11, greetings: ["早上好"] },
+        { start: 11, end: 14, greetings: ["中午好"] },
+        { start: 14, end: 18, greetings: ["下午好"] },
         { start: 18, end: 24, greetings: ["晚上好"] },
         { start: 0, end: 5, greetings: ["夜深了，聊会吧"] }
     ];
