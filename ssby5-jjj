@@ -249,7 +249,7 @@
 
     const SECOND_REPLIES = [
         "宝宝多大了",
-        "宝宝喜欢穿白丝或者黑丝吗？",
+        "宝宝喜欢被调吗？",
     ];
 
     function getRandomSecondReply() {
